@@ -1,5 +1,0 @@
-path: C:/Users/OWNER/source/repos/road_anomaly_yolo/data/road_defects  # 절대 경로
-train: images/train
-val: images/val
-names:
-  0: pothole
