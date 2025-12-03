@@ -1,0 +1,155 @@
+[
+    {
+        "video_timestamp": 0.6333333333333333,
+        "severity": "HIGH",
+        "status": "DETECTED",
+        "total_detections": 1,
+        "average_confidence": 0.46261265873908997,
+        "session_id": "session_001",
+        "detection_center": {
+            "x": 224.5019989013672,
+            "y": 344.777587890625
+        },
+        "images": {
+            "original": "original_20251203_125533_368426_1.jpg",
+            "processed": "enhanced_20251203_125533_368426_1.jpg",
+            "detected": "pothole_20251203_125533_368426_1.jpg"
+        }
+    },
+    {
+        "video_timestamp": 0.9333333333333333,
+        "severity": "HIGH",
+        "status": "DETECTED",
+        "total_detections": 2,
+        "average_confidence": 0.4353088438510895,
+        "session_id": "session_001",
+        "detection_center": {
+            "x": 189.1647186279297,
+            "y": 442.53887939453125
+        },
+        "images": {
+            "original": "original_20251203_125535_191462_2.jpg",
+            "processed": "enhanced_20251203_125535_191462_2.jpg",
+            "detected": "pothole_20251203_125535_191462_2.jpg"
+        }
+    },
+    {
+        "video_timestamp": 0.9666666666666667,
+        "severity": "LOW",
+        "status": "DETECTED",
+        "total_detections": 3,
+        "average_confidence": 0.5114763577779134,
+        "session_id": "session_001",
+        "detection_center": {
+            "x": 191.6957244873047,
+            "y": 241.89291381835938
+        },
+        "images": {
+            "original": "original_20251203_125535_403841_3.jpg",
+            "processed": "enhanced_20251203_125535_403841_3.jpg",
+            "detected": "pothole_20251203_125535_403841_3.jpg"
+        }
+    },
+    {
+        "video_timestamp": 1.2,
+        "severity": "MEDIUM",
+        "status": "DETECTED",
+        "total_detections": 4,
+        "average_confidence": 0.5975539535284042,
+        "session_id": "session_001",
+        "detection_center": {
+            "x": 546.8204345703125,
+            "y": 318.4796142578125
+        },
+        "images": {
+            "original": "original_20251203_125536_709067_4.jpg",
+            "processed": "enhanced_20251203_125536_709067_4.jpg",
+            "detected": "pothole_20251203_125536_709067_4.jpg"
+        }
+    },
+    {
+        "video_timestamp": 1.2,
+        "severity": "LOW",
+        "status": "DETECTED",
+        "total_detections": 5,
+        "average_confidence": 0.5997299194335938,
+        "session_id": "session_001",
+        "detection_center": {
+            "x": 358.9698181152344,
+            "y": 315.2037353515625
+        },
+        "images": {
+            "original": "original_20251203_125536_726527_5.jpg",
+            "processed": "enhanced_20251203_125536_726527_5.jpg",
+            "detected": "pothole_20251203_125536_726527_5.jpg"
+        }
+    },
+    {
+        "video_timestamp": 1.4333333333333333,
+        "severity": "LOW",
+        "status": "DETECTED",
+        "total_detections": 6,
+        "average_confidence": 0.5662997961044312,
+        "session_id": "session_001",
+        "detection_center": {
+            "x": 313.49981689453125,
+            "y": 133.0763702392578
+        },
+        "images": {
+            "original": "original_20251203_125538_116924_6.jpg",
+            "processed": "enhanced_20251203_125538_116924_6.jpg",
+            "detected": "pothole_20251203_125538_116924_6.jpg"
+        }
+    },
+    {
+        "video_timestamp": 1.5333333333333334,
+        "severity": "LOW",
+        "status": "DETECTED",
+        "total_detections": 7,
+        "average_confidence": 0.6052434955324445,
+        "session_id": "session_001",
+        "detection_center": {
+            "x": 557.0731201171875,
+            "y": 311.6268310546875
+        },
+        "images": {
+            "original": "original_20251203_125538_761789_7.jpg",
+            "processed": "enhanced_20251203_125538_761789_7.jpg",
+            "detected": "pothole_20251203_125538_761789_7.jpg"
+        }
+    },
+    {
+        "video_timestamp": 1.5333333333333334,
+        "severity": "LOW",
+        "status": "DETECTED",
+        "total_detections": 8,
+        "average_confidence": 0.6154587939381599,
+        "session_id": "session_001",
+        "detection_center": {
+            "x": 412.24334716796875,
+            "y": 312.9902038574219
+        },
+        "images": {
+            "original": "original_20251203_125538_780200_8.jpg",
+            "processed": "enhanced_20251203_125538_780200_8.jpg",
+            "detected": "pothole_20251203_125538_780200_8.jpg"
+        }
+    },
+    {
+        "video_timestamp": 1.6333333333333333,
+        "severity": "LOW",
+        "status": "DETECTED",
+        "total_detections": 9,
+        "average_confidence": 0.5940784911314646,
+        "session_id": "session_001",
+        "detection_center": {
+            "x": 497.63592529296875,
+            "y": 184.69229125976562
+        },
+        "images": {
+            "original": "original_20251203_125539_333130_9.jpg",
+            "processed": "enhanced_20251203_125539_333130_9.jpg",
+            "detected": "pothole_20251203_125539_333130_9.jpg"
+        }
+    }
+]
