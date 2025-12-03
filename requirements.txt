@@ -1,7 +1,0 @@
-ultralytics==8.3.3
-torch>=2.1.0
-opencv-python
-matplotlib
-pyyaml
-tqdm
-numpy
