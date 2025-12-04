@@ -1,4 +1,4 @@
-path: C:/Users/OWNER/source/repos/road_anomaly_yolo/data/road_defects  # 절대 경로
+path: ../data/road_defects
 train: images/train
 val: images/val
 names:

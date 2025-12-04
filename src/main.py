@@ -7,25 +7,135 @@ from ultralytics import YOLO
 import cv2
 import torch
 import numpy as np
-from typing import List, Tuple
+from typing import List
+import shutil
 
-DATA_YAML = "config.yaml"
-MODEL_PATH = "outputs/weights/road_anomaly_yolo2/weights/best.pt"
+DATA_YAML = "../config.yaml"
+MODEL_PATH  = "outputs/weights/road_anomaly_yolo/weights/best.pt"
 VIDEO_PATH = 0
-RESULT_DIR = "PotPing-cv/results"
+RESULT_DIR = "results"
+POST_URL  = "http://localhost:8080/api/potholes/detection"  # JSON 전송 URL
 
-POST_URL  = "http://your-backend.com/api/detection"  # JSON 전송 URL
-
+# CLAHE 전처리된 데이터셋 경로
+PREPROCESSED_DATA_DIR = "./data/road_defects_clahe"
 
 os.makedirs(RESULT_DIR, exist_ok=True)
 RESULT_JSON = os.path.join(RESULT_DIR, "detections.json")
 
+# ------------------------------
+# CLAHE 전처리 함수 (학습/추론 공통)
+# ------------------------------
+def apply_clahe(image: np.ndarray) -> np.ndarray:
+    """
+    CLAHE (Contrast Limited Adaptive Histogram Equalization) 적용
+    학습과 추론에 동일하게 사용되는 전처리 함수
+    """
+    # YCrCb 색공간으로 변환 (Y: 밝기, Cr/Cb: 색상)
+    ycrcb = cv2.cvtColor(image, cv2.COLOR_BGR2YCrCb)
+    y_channel, cr, cb = cv2.split(ycrcb)
+    
+    # CLAHE를 Y 채널에만 적용
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    y_eq = clahe.apply(y_channel)
+    
+    # 채널 합치고 BGR로 변환
+    ycrcb_eq = cv2.merge((y_eq, cr, cb))
+    enhanced = cv2.cvtColor(ycrcb_eq, cv2.COLOR_YCrCb2BGR)
+    
+    return enhanced
+
+# ==================== 데이터셋 전처리 ====================
+def preprocess_dataset(original_data_dir="../data/road_defects", output_dir=None):
+    """전체 데이터셋에 CLAHE 적용"""
+    if output_dir is None:
+        output_dir = PREPROCESSED_DATA_DIR
+    
+    original_path = Path(original_data_dir)
+    output_path = Path(output_dir)
+    
+    if not original_path.exists():
+        print(f"원본 데이터 디렉토리가 없습니다: {original_data_dir}")
+        return False
+    
+    print("데이터셋 전처리 시작 (CLAHE 적용)...")
+    
+    for split in ['train', 'val']:
+        img_src = original_path / "images" / split
+        img_dst = output_path / "images" / split
+        img_dst.mkdir(parents=True, exist_ok=True)
+        
+        lbl_src = original_path / "labels" / split
+        lbl_dst = output_path / "labels" / split
+        lbl_dst.mkdir(parents=True, exist_ok=True)
+        
+        if not img_src.exists():
+            print(f"{img_src} 디렉토리가 없습니다. 건너뜀.")
+            continue
+        
+        # 이미지 전처리
+        image_files = list(img_src.glob("*.[jp][pn]*g"))
+        print(f"{split} 세트: {len(image_files)}장 처리 중...")
+        
+        processed_count = 0
+        for img_path in image_files:
+            try:
+                img = cv2.imread(str(img_path))
+                if img is None:
+                    print(f"읽기 실패: {img_path}")
+                    continue
+                
+                enhanced = apply_clahe(img)
+                output_img_path = img_dst / img_path.name
+                cv2.imwrite(str(output_img_path), enhanced)
+                processed_count += 1
+            except Exception as e:
+                print(f"처리 실패 {img_path}: {e}")
+        
+        print(f"{split} 이미지: {processed_count}/{len(image_files)}장 완료")
+        
+        # 라벨 파일 복사
+        if lbl_src.exists():
+            label_files = list(lbl_src.glob("*.txt"))
+            copied_count = 0
+            for lbl_path in label_files:
+                try:
+                    shutil.copy2(str(lbl_path), str(lbl_dst / lbl_path.name))
+                    copied_count += 1
+                except Exception as e:
+                    print(f"라벨 복사 실패 {lbl_path}: {e}")
+            print(f"{split} 라벨: {copied_count}/{len(label_files)}개 복사 완료")
+    
+    # YAML 파일 생성
+    create_preprocessed_yaml(output_dir)
+    print("전처리 완료!")
+    return True
+
+def create_preprocessed_yaml(preprocessed_dir):
+    """
+    전처리된 데이터셋용 YAML 파일 생성
+    """
+    yaml_path = Path(preprocessed_dir) / "data.yaml"
+    
+    yaml_content = f"""# CLAHE 전처리된 포트홀 데이터셋 path: {preprocessed_dir} train: images/train val: images/val
+
+    # Classes
+    nc: 1
+    names: ['pothole']
+    """
+    
+    with open(yaml_path, 'w') as f:
+        f.write(yaml_content)
+    
+    print(f"YAML 생성: {yaml_path}")
+    return str(yaml_path)
+
+
 #모델 로드
 if not os.path.exists(MODEL_PATH):
-    print("🚀 Pretrained YOLOv8n 모델로 시작합니다.")
+    print("Pretrained YOLOv8n 모델로 시작합니다.")
     model = YOLO("yolov8n.pt")
 else:
-    print("✅ 기존 학습된 모델 로드 중...")
+    print("기존 학습된 모델 로드 중...")
     model = YOLO(MODEL_PATH)
 
 # ------------------------------
@@ -49,18 +159,65 @@ def bbox_iou(box1: List[float], box2: List[float]) -> float:
         return 0.0
     return inter_area / denom
 
-#모델 훈련
-def train_model():
+# ------------------------------
+# 모델 훈련 (CLAHE 전처리된 데이터 사용)
+# ------------------------------
+def train_model(use_preprocessed=True):
+    """
+    CLAHE 전처리된 데이터로 학습
+    """
+    if use_preprocessed:
+        # 전처리된 데이터가 없으면 생성
+        if not Path(PREPROCESSED_DATA_DIR).exists():
+            print("전처리된 데이터셋이 없습니다. 생성 중...")
+            preprocess_dataset()
+        
+        data_yaml = str(Path(PREPROCESSED_DATA_DIR) / "data.yaml")
+        print(f"CLAHE 전처리된 데이터로 학습: {data_yaml}")
+    else:
+        data_yaml = DATA_YAML
+        print(f"원본 데이터로 학습: {data_yaml}")
+    
     model.train(
-        data=DATA_YAML,
-        epochs=30,
+        data=data_yaml,
+        epochs=150,  # 30 -> 150으로 증가
         imgsz=640,
-        batch=8,
-        name="road_anomaly_yolo",
+        batch=16,  # 8 -> 16으로 증가
+        
+        # 학습률 최적화
+        lr0=0.01,
+        lrf=0.01,
+        momentum=0.937,
+        weight_decay=0.0005,
+        warmup_epochs=5,
+        warmup_momentum=0.8,
+        
+        # 포트홀 특화 데이터 증강
+        hsv_h=0.01,      # 색조 (도로 색상 유지)
+        hsv_s=0.5,       # 채도
+        hsv_v=0.4,       # 명도
+        degrees=10.0,    # 회전
+        translate=0.2,   # 이동
+        scale=0.7,       # 스케일 (중요!)
+        shear=3.0,       # 전단
+        perspective=0.0003,  # 원근
+        flipud=0.0,      # 상하반전 X
+        fliplr=0.5,      # 좌우반전 O
+        mosaic=1.0,      # Mosaic
+        mixup=0.2,       # MixUp
+        copy_paste=0.3,  # Copy-Paste
+        
+        # 성능 최적화
+        cache=True,
+        workers=8,
+        patience=50,
+        
+        name="road_anomaly_yolo_clahe",
         project="outputs/weights",
-        device=0 if torch.cuda.is_available() else "cpu"
+        device=0 if torch.cuda.is_available() else "cpu",
+        verbose=True
     )
-    print("✅ 학습 완료!")
+    print("학습 완료!")
 
 def optimize_conf_threshold(model, val_images_dir="./data/road_defects/images/val", val_labels_dir="./data/road_defects/labels/val", target_precision: float=0.85, target_recall: float=0.8, iou_thr: float = 0.5, conf_range: np.ndarray = None) -> float:
     if conf_range is None:
@@ -73,16 +230,21 @@ def optimize_conf_threshold(model, val_images_dir="./data/road_defects/images/va
     allowed_ext = [".png", ".jpg", ".jpeg"]
     images = sorted([p for p in val_images_dir.glob("*") if p.suffix.lower() in allowed_ext])
     if len(images) == 0:
-        print("⚠️ 검증 이미지가 없습니다:", val_images_dir)
+        print("검증 이미지가 없습니다:", val_images_dir)
         return 0.5
 
     # GT 로드
     gt_dict = {}
     for lbl_path in val_labels_dir.glob("*.txt"):
-        image_name = lbl_path.stem + ".jpg"  # 너는 PNG 사용한다고 했으니 그대로
-        img_path = val_images_dir / image_name
-        if not img_path.exists():
-            # 이미지가 없으면 skip
+        
+        img_path = None
+        for ext in allowed_ext:
+            potential_path = val_images_dir / f"{lbl_path.stem}{ext}"
+            if potential_path.exists():
+                img_path = potential_path
+                break
+        
+        if img_path is None or not img_path.exists():
             continue
 
         img = cv2.imread(str(img_path))
@@ -104,7 +266,7 @@ def optimize_conf_threshold(model, val_images_dir="./data/road_defects/images/va
                 x2 = (xc + w / 2.0) * img_w
                 y2 = (yc + h / 2.0) * img_h
                 boxes.append([x1, y1, x2, y2, cls])
-        gt_dict[image_name] = boxes
+        gt_dict[img_path.name] = boxes
 
     best_f1 = -1.0
     best_conf = 0.5
@@ -187,7 +349,7 @@ def optimize_conf_threshold(model, val_images_dir="./data/road_defects/images/va
             best_f1 = f1
             best_conf = float(conf_thres)
 
-    print(f"🎯 검증 결과 - best_conf: {best_conf:.3f}, best_f1: {best_f1:.4f}")
+    print(f"검증 결과 - best_conf: {best_conf:.3f}, best_f1: {best_f1:.4f}")
     return best_conf
 
 
@@ -199,10 +361,13 @@ def predict_folder(img_dir="./data/images/test", conf_threshold=0.5):
     for img_path in images:
         img = cv2.imread(img_path)
         if img is None:
-            print("⚠️ 이미지를 열 수 없음:", img_path)
+            print(" 이미지를 열 수 없음:", img_path)
             continue
 
-        results = model.predict(source=img, conf=conf_threshold, verbose=False)
+        # CLAHE 적용 (학습 시와 동일)
+        enhanced_img = apply_clahe(img)
+
+        results = model.predict(source=enhanced_img, conf=conf_threshold, verbose=False)
         if len(results) == 0:
             detections = []
         else:
@@ -231,25 +396,26 @@ def predict_folder(img_dir="./data/images/test", conf_threshold=0.5):
     with open(RESULT_JSON, "w", encoding="utf-8") as f:
         json.dump(results_list, f, ensure_ascii=False, indent=4)
 
-    print(f"✅ 결과 JSON 저장 완료: {RESULT_JSON}")
+    print(f"결과 JSON 저장 완료: {RESULT_JSON}")
         
 
-def live_detect(video_path=0, session_id="session_001", conf_threshold=0.5,
+def live_detect(video_path=0, session_id="session_001",         conf_threshold=0.5,
                 dynamic_update: bool = False, update_interval_frames: int = 300,
-                val_images_dir: str = "./data/road_defects/images/val", 
-                val_labels_dir: str = "./data/road_defects/labels/val",
+                val_images_dir: str = "./data/road_defects_clahe/images/val", 
+                val_labels_dir: str = "./data/road_defects_clahe/labels/val",
                 save_interval_seconds: float = 2.0,  # 같은 위치는 2초에 1번만 저장
                 min_movement_threshold: float = 100.0):  # 최소 이동 거리 (픽셀)
     
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        print("❌ 비디오를 열 수 없습니다.")
+        print("비디오를 열 수 없습니다.")
         return
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30
     frame_count = 0
 
-    print("🎥 실시간 포트홀 감지 시작... (ESC 키로 종료)")
+    print("실시간 포트홀 감지 시작... (ESC 키로 종료)")
+    print("CLAHE 전처리 적용 중...")
 
     live_results = []
     stat_conf_list = []
@@ -259,7 +425,6 @@ def live_detect(video_path=0, session_id="session_001", conf_threshold=0.5,
     recent_detections = {}  # {detection_id: {'time': timestamp, 'center': (cx, cy)}}
     detection_id_counter = 0
 
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     current_conf = float(conf_threshold)
     
     while True:
@@ -267,19 +432,15 @@ def live_detect(video_path=0, session_id="session_001", conf_threshold=0.5,
         if not ret:
             break
 
-        display_frame = cv2.resize(frame, (640, 640))
-        original_frame = frame.copy()
 
-        # 히스토그램 평활화
-        ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
-        y_channel, cr, cb = cv2.split(ycrcb)
-        y_eq = clahe.apply(y_channel)
-        ycrcb_eq = cv2.merge((y_eq, cr, cb))
-        enhanced_frame = cv2.cvtColor(ycrcb_eq, cv2.COLOR_YCrCb2BGR)
+        original_frame = frame.copy()
+        # CLAHE 적용 (학습 시와 동일한 방식)
+        enhanced_frame = apply_clahe(frame)
 
         # YOLO 탐지
         results = model.predict(source=enhanced_frame, conf=current_conf, verbose=False)
         annotated = enhanced_frame.copy()
+
         
         if len(results) > 0:
             res = results[0]
@@ -335,7 +496,7 @@ def live_detect(video_path=0, session_id="session_001", conf_threshold=0.5,
                     else:
                         severity = "HIGH"
 
-                    # 🔥 중복 저장 방지 로직
+                    # 중복 저장 방지 로직
                     should_save = True
                     matched_detection_id = None
                     
@@ -365,7 +526,7 @@ def live_detect(video_path=0, session_id="session_001", conf_threshold=0.5,
                         print(f"⏭️  중복 탐지 스킵 (ID: {matched_detection_id}, 거리: {distance:.0f}px)")
                         continue
                     
-                    # 🎯 새로운 탐지이거나 충분히 이동한 경우만 저장
+                    # 새로운 탐지이거나 충분히 이동한 경우만 저장
                     total_detections += 1
                     stat_conf_list.append(float(conf))
                     avg_confidence = float(np.mean(stat_conf_list)) if len(stat_conf_list) > 0 else float(conf)
@@ -394,11 +555,11 @@ def live_detect(video_path=0, session_id="session_001", conf_threshold=0.5,
                         }
                         
                     except Exception as e:
-                        print("⚠️ 이미지 저장 오류:", e)
+                        print("이미지 저장 오류:", e)
                         continue
 
-                    print(f"⚠️ 포트홀 감지! (conf={conf:.2f}, severity={severity}, area={area:.0f})")
-                    print(f"📷 저장: {det_name}")
+                    print(f"포트홀 감지! (conf={conf:.2f}, severity={severity}, area={area:.0f})")
+                    print(f"저장: {det_name}")
 
                     payload = {
                         "video_timestamp": video_timestamp,
@@ -406,8 +567,6 @@ def live_detect(video_path=0, session_id="session_001", conf_threshold=0.5,
                         "status": "DETECTED",
                         "total_detections": total_detections,
                         "average_confidence": avg_confidence,
-                        "session_id": session_id,
-                        "detection_center": {"x": float(cx), "y": float(cy)},
                         "images": {
                             "original": ori_name,
                             "processed": enh_name,
@@ -418,24 +577,24 @@ def live_detect(video_path=0, session_id="session_001", conf_threshold=0.5,
                     # POST 전송
                     try:
                         r = requests.post(POST_URL, json=payload, timeout=5)
-                        print(f"📡 서버 POST 결과 → {r.status_code}")
+                        print(f"서버 POST 결과 → {r.status_code}")
                     except Exception as e:
-                        print("❌ POST 오류:", e)
+                        print("POST 오류:", e)
 
                     live_results.append(payload)
 
         # dynamic_update
         if dynamic_update and update_interval_frames > 0 and (frame_count % update_interval_frames) == 0:
-            print("🔁 dynamic_update: threshold 재계산 중...")
+            print("dynamic_update: threshold 재계산 중...")
             try:
                 new_best = optimize_conf_threshold(model,
                                                 val_images_dir=val_images_dir,
                                                 val_labels_dir=val_labels_dir)
                 if isinstance(new_best, float) and 0.0 < new_best < 1.0:
-                    print(f"🔔 적용: threshold {current_conf:.3f} -> {new_best:.3f}")
+                    print(f"적용: threshold {current_conf:.3f} -> {new_best:.3f}")
                     current_conf = float(new_best)
             except Exception as e:
-                print("⚠️ dynamic_update 중 오류:", e)
+                print("dynamic_update 중 오류:", e)
 
         if cv2.waitKey(1) == 27:
             break
@@ -444,8 +603,8 @@ def live_detect(video_path=0, session_id="session_001", conf_threshold=0.5,
     json_path = os.path.join(RESULT_DIR, "live_detections.json")
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(live_results, f, ensure_ascii=False, indent=4)
-    print(f"✅ 실시간 탐지 JSON 저장 완료: {json_path}")
-    print(f"📊 총 저장된 이미지 세트: {total_detections}개 (원본 x3 = {total_detections*3}장)")
+    print(f"실시간 탐지 JSON 저장 완료: {json_path}")
+    print(f"총 저장된 이미지 세트: {total_detections}개 (원본 x3 = {total_detections*3}장)")
 
     cap.release()
     cv2.destroyAllWindows()
@@ -456,7 +615,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", type=str, default="predict", choices=["train", "predict", "live-camera"])
+    parser.add_argument("--mode", type=str, default="predict", choices=["preprocess", "train", "predict", "live-camera"])
     parser.add_argument("--target_precision", type=float, default=0.85)
     parser.add_argument("--target_recall", type=float, default=0.8)
     parser.add_argument("--dynamic_update", action="store_true", help="live mode에서 주기적으로 threshold 재계산")
@@ -465,34 +624,47 @@ if __name__ == "__main__":
 
     best_conf = 0.5
 
-    if args.mode == "train":
-        train_model()
-        # 학습 후 검증셋으로 confidence threshold 최적화
+    if args.mode == "preprocess":
+        # 데이터셋 전처리만 실행
+        preprocess_dataset()
+        
+    elif args.mode == "train":
+        # CLAHE 전처리된 데이터로 학습
+        train_model(use_preprocessed=True)
+        
+        # 학습 후 최적 threshold 계산
         best_conf = optimize_conf_threshold(
             model,
-            val_images_dir="./data/road_defects/images/val",
-            val_labels_dir="./data/road_defects/labels/val",
+            val_images_dir=f"{PREPROCESSED_DATA_DIR}/images/val",
+            val_labels_dir=f"{PREPROCESSED_DATA_DIR}/labels/val",
             target_precision=args.target_precision,
             target_recall=args.target_recall
         )
-        print(f"✅ 학습 완료 후 최적 confidence threshold: {best_conf}")
+        print(f"최적 confidence threshold: {best_conf}")
 
-        # best_conf 저장
         with open("best_conf.json", "w") as f:
             json.dump({"best_conf": best_conf}, f)
-        print("💾 best_conf 저장 완료: best_conf.json")
+        print("best_conf 저장 완료")
+
     elif args.mode == "predict":
         predict_folder(conf_threshold=0.5)
+
     elif args.mode == "live-camera":
         # 저장된 best_conf 불러오기
         try:
             with open("best_conf.json", "r") as f:
                 best_conf = json.load(f).get("best_conf", 0.5)
-            print(f"🎯 저장된 best_conf 불러옴: {best_conf:.3f}")
+            print(f"저장된 best_conf 불러옴: {best_conf:.3f}")
         except Exception:
             best_conf = 0.5
-            print("⚠️ best_conf.json 없음, 기본값 0.5 사용")
+            print("best_conf.json 없음, 기본값 0.5 사용")
 
-        live_detect(video_path=VIDEO_PATH, session_id="session_001", conf_threshold=best_conf,
-                    dynamic_update=args.dynamic_update, update_interval_frames=args.update_interval_frames,
-                    val_images_dir="./data/road_defects/images/val", val_labels_dir="./data/road_defects/labels/val")
+        live_detect(
+            video_path=VIDEO_PATH,
+            session_id="session_001",
+            conf_threshold=best_conf,
+            dynamic_update=args.dynamic_update,
+            update_interval_frames=args.update_interval_frames,
+            val_images_dir=f"{PREPROCESSED_DATA_DIR}/images/val",
+            val_labels_dir=f"{PREPROCESSED_DATA_DIR}/labels/val"
+        )
