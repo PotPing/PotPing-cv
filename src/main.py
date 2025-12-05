@@ -499,12 +499,7 @@ def predict_folder(img_dir="./data/images/test", conf_threshold=0.5):
 
 def live_detect(
     video_path=0,
-    session_id="session_001",
     conf_threshold=0.5,
-    dynamic_update: bool = False,
-    update_interval_frames: int = 300,
-    val_images_dir: str = "./data/road_defects_clahe/images/val",
-    val_labels_dir: str = "./data/road_defects_clahe/labels/val",
     save_interval_seconds: float = 2.0,
     min_movement_threshold: float = 100.0
 ):
@@ -535,11 +530,6 @@ def live_detect(
     detection_id_counter = 0
 
     current_conf = float(conf_threshold)
-    
-    # 성능 모니터링
-    import time
-    fps_start_time = time.time()
-    fps_frame_count = 0
     
     try:
         while True:
@@ -593,9 +583,6 @@ def live_detect(
                         label = res.names[int(cid)]
                         
                         if label.lower() != "pothole":
-                            continue
-
-                        if conf < 0.7:
                             continue
 
                         cx = (x1 + x2) / 2
@@ -675,11 +662,6 @@ def live_detect(
                             "status": "DETECTED",
                             "total_detections": total_detections,
                             "average_confidence": avg_confidence,
-                            "session_id": session_id,
-                            "detection_center": {
-                                "x": float(cx),
-                                "y": float(cy)
-                            },
                             "images": {
                                 "original": ori_name,
                                 "processed": enh_name,
@@ -691,20 +673,6 @@ def live_detect(
                         async_saver.post_async(payload)
                         live_results.append(payload)
 
-            # dynamic_update
-            if dynamic_update and update_interval_frames > 0 and (frame_count % update_interval_frames) == 0:
-                print("🔄 dynamic_update: threshold 재계산 중...")
-                try:
-                    new_best = optimize_conf_threshold(
-                        model,
-                        val_images_dir=val_images_dir,
-                        val_labels_dir=val_labels_dir
-                    )
-                    if isinstance(new_best, float) and 0.0 < new_best < 1.0:
-                        print(f"적용: threshold {current_conf:.3f} -> {new_best:.3f}")
-                        current_conf = float(new_best)
-                except Exception as e:
-                    print("dynamic_update 중 오류:", e)
 
             # ESC 키로 종료
             key = cv2.waitKey(1) & 0xFF
@@ -735,10 +703,6 @@ if __name__ == "__main__":
                         choices=["preprocess", "train", "predict", "live-camera"])
     parser.add_argument("--target_precision", type=float, default=0.85)
     parser.add_argument("--target_recall", type=float, default=0.8)
-    parser.add_argument("--dynamic_update", action="store_true", 
-                        help="live mode에서 주기적으로 threshold 재계산")
-    parser.add_argument("--update_interval_frames", type=int, default=300, 
-                        help="dynamic_update일 때 몇 프레임마다 재계산할지")
     args = parser.parse_args()
 
     best_conf = 0.5
@@ -777,10 +741,5 @@ if __name__ == "__main__":
 
         live_detect(
             video_path=VIDEO_PATH,
-            session_id="session_001",
             conf_threshold=best_conf,
-            dynamic_update=args.dynamic_update,
-            update_interval_frames=args.update_interval_frames,
-            val_images_dir=f"{PREPROCESSED_DATA_DIR}/images/val",
-            val_labels_dir=f"{PREPROCESSED_DATA_DIR}/labels/val"
         )
