@@ -15,6 +15,7 @@
 ---
 
 ## 📁 프로젝트 구조
+```
 PotPing-cv/
 ├── src/
 │   ├── outputs/weights/road_anomaly_yolo_clahe/weights
@@ -28,7 +29,7 @@ PotPing-cv/
 ├── config.yaml              # 데이터셋 설정
 ├── requirements.txt         # 필요한 라이브러리
 └── README.md                # 이 파일
-
+```
 ---
 
 ## 🔧 설치 방법
@@ -199,3 +200,4 @@ source venv/bin/activate
 - `live_detections.json`: 전체 검출 기록
 
 ---
+
